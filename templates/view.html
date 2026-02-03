@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block title %}View - Photo Share{% endblock %}
+
+{% block content %}
+<div class="view-container">
+    <div class="view-header">
+        <span class="view-sender">From: {{ photo.sender }}</span>
+        <div class="countdown-container">
+            <div class="countdown-ring">
+                <svg viewBox="0 0 36 36">
+                    <path class="countdown-bg"
+                        d="M18 2.0845
+                        a 15.9155 15.9155 0 0 1 0 31.831
+                        a 15.9155 15.9155 0 0 1 0 -31.831"
+                        fill="none"
+                        stroke="#333"
+                        stroke-width="2"/>
+                    <path class="countdown-progress"
+                        id="countdown-circle"
+                        d="M18 2.0845
+                        a 15.9155 15.9155 0 0 1 0 31.831
+                        a 15.9155 15.9155 0 0 1 0 -31.831"
+                        fill="none"
+                        stroke="#ff4757"
+                        stroke-width="2"
+                        stroke-dasharray="100, 100"/>
+                </svg>
+                <span class="countdown-text" id="countdown-text">{{ timeout }}</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="photo-display">
+        {% if photo.is_video %}
+        <video src="{{ photo.data }}" class="view-photo" autoplay controls></video>
+        {% else %}
+        <img src="{{ photo.data }}" alt="Photo from {{ photo.sender }}" class="view-photo">
+        {% endif %}
+    </div>
+
+    <div class="view-footer">
+        <p class="disappear-warning">This {{ 'video' if photo.is_video else 'photo' }} will disappear when the timer ends</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const timeout = {{ timeout }};
+    const photoId = "{{ photo_id }}";
+    let remaining = timeout;
+
+    const countdownText = document.getElementById('countdown-text');
+    const countdownCircle = document.getElementById('countdown-circle');
+
+    function updateCountdown() {
+        remaining--;
+        countdownText.textContent = remaining;
+
+        // Update circle progress
+        const progress = (remaining / timeout) * 100;
+        countdownCircle.style.strokeDasharray = `${progress}, 100`;
+
+        if (remaining <= 5) {
+            countdownCircle.style.stroke = '#ff4757';
+            document.querySelector('.countdown-container').classList.add('urgent');
+        }
+
+        if (remaining <= 0) {
+            // Delete the photo and redirect
+            fetch(`/api/delete/${photoId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            }).then(() => {
+                window.location.href = '/inbox';
+            });
+        }
+    }
+
+    // Start countdown
+    setInterval(updateCountdown, 1000);
+</script>
+{% endblock %}

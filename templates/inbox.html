@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}Inbox - Photo Share{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Your Inbox</h1>
+    <p>Photos will disappear {{ config.VIEW_TIMEOUT_SECONDS if config else 30 }} seconds after viewing</p>
+</div>
+
+{% if photos %}
+<div class="photo-grid">
+    {% for photo in photos %}
+    <a href="{{ url_for('view_photo', photo_id=photo.id) }}" class="photo-card">
+        <div class="photo-icon">?</div>
+        <div class="photo-info">
+            <span class="photo-sender">From: {{ photo.sender }}</span>
+            <span class="photo-time">{{ photo.timestamp.strftime('%b %d, %I:%M %p') }}</span>
+        </div>
+        <div class="photo-badge">Tap to view</div>
+    </a>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <div class="empty-icon">inbox</div>
+    <h2>No photos yet</h2>
+    <p>When someone sends you a photo, it will appear here.</p>
+    <a href="{{ url_for('send') }}" class="btn btn-primary">Send a Photo</a>
+</div>
+{% endif %}
+{% endblock %}

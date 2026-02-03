@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block title %}Send - Photo Share{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Send Photo or Video</h1>
+    <p>Send a disappearing photo or video to <strong>{{ recipient }}</strong></p>
+</div>
+
+<form method="POST" enctype="multipart/form-data" class="send-form">
+    <div class="upload-area" id="upload-area">
+        <div class="upload-icon">+</div>
+        <p class="upload-text">Click to select a photo or video</p>
+        <p class="upload-hint">or drag and drop</p>
+        <input type="file" name="media" id="media-input" accept="image/*,video/*" required>
+    </div>
+
+    <div class="preview-container" id="preview-container" style="display: none;">
+        <img id="preview-image" src="" alt="Preview" style="display: none;">
+        <video id="preview-video" controls style="display: none;"></video>
+        <button type="button" class="btn btn-secondary" id="change-media">Change</button>
+    </div>
+
+    <button type="submit" class="btn btn-primary btn-full" id="send-btn" disabled>Send</button>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const uploadArea = document.getElementById('upload-area');
+    const mediaInput = document.getElementById('media-input');
+    const previewContainer = document.getElementById('preview-container');
+    const previewImage = document.getElementById('preview-image');
+    const previewVideo = document.getElementById('preview-video');
+    const changeMediaBtn = document.getElementById('change-media');
+    const sendBtn = document.getElementById('send-btn');
+
+    uploadArea.addEventListener('click', () => mediaInput.click());
+
+    uploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadArea.classList.add('dragover');
+    });
+
+    uploadArea.addEventListener('dragleave', () => {
+        uploadArea.classList.remove('dragover');
+    });
+
+    uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadArea.classList.remove('dragover');
+        if (e.dataTransfer.files.length) {
+            mediaInput.files = e.dataTransfer.files;
+            showPreview(e.dataTransfer.files[0]);
+        }
+    });
+
+    mediaInput.addEventListener('change', (e) => {
+        if (e.target.files.length) {
+            showPreview(e.target.files[0]);
+        }
+    });
+
+    changeMediaBtn.addEventListener('click', () => {
+        mediaInput.value = '';
+        previewContainer.style.display = 'none';
+        previewImage.style.display = 'none';
+        previewVideo.style.display = 'none';
+        uploadArea.style.display = 'flex';
+        sendBtn.disabled = true;
+    });
+
+    function showPreview(file) {
+        const isVideo = file.type.startsWith('video/');
+        const reader = new FileReader();
+
+        reader.onload = (e) => {
+            if (isVideo) {
+                previewVideo.src = e.target.result;
+                previewVideo.style.display = 'block';
+                previewImage.style.display = 'none';
+            } else {
+                previewImage.src = e.target.result;
+                previewImage.style.display = 'block';
+                previewVideo.style.display = 'none';
+            }
+            uploadArea.style.display = 'none';
+            previewContainer.style.display = 'block';
+            sendBtn.disabled = false;
+        };
+        reader.readAsDataURL(file);
+    }
+</script>
+{% endblock %}
