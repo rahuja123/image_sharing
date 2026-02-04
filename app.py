@@ -6,8 +6,8 @@ import uuid
 from datetime import datetime, timedelta
 from functools import wraps
 
-import psycopg2
-from psycopg2.extras import RealDictCursor
+import psycopg
+from psycopg.rows import dict_row
 from flask import (
     Flask,
     render_template,
@@ -38,7 +38,7 @@ limiter = Limiter(
 
 def get_db():
     """Get database connection."""
-    conn = psycopg2.connect(config.DATABASE_URL, cursor_factory=RealDictCursor)
+    conn = psycopg.connect(config.DATABASE_URL, row_factory=dict_row)
     return conn
 
 
