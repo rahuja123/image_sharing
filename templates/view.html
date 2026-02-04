@@ -1,50 +1,201 @@
-{% extends "base.html" %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>View - Photo Share</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
-{% block title %}View - Photo Share{% endblock %}
+        body {
+            background: #000;
+            overflow: hidden;
+            touch-action: manipulation;
+            -webkit-user-select: none;
+            user-select: none;
+        }
 
-{% block content %}
-<div class="view-container">
-    <div class="view-header">
-        <span class="view-sender">From: {{ photo.sender }}</span>
-        <button class="close-btn" id="close-btn" title="Close">&times;</button>
-        <div class="countdown-container">
-            <div class="countdown-ring">
-                <svg viewBox="0 0 36 36">
-                    <path class="countdown-bg"
-                        d="M18 2.0845
-                        a 15.9155 15.9155 0 0 1 0 31.831
-                        a 15.9155 15.9155 0 0 1 0 -31.831"
-                        fill="none"
-                        stroke="#333"
-                        stroke-width="2"/>
-                    <path class="countdown-progress"
-                        id="countdown-circle"
-                        d="M18 2.0845
-                        a 15.9155 15.9155 0 0 1 0 31.831
-                        a 15.9155 15.9155 0 0 1 0 -31.831"
-                        fill="none"
-                        stroke="#ff4757"
-                        stroke-width="2"
-                        stroke-dasharray="100, 100"/>
-                </svg>
-                <span class="countdown-text" id="countdown-text">{{ timeout }}</span>
-            </div>
+        .fullscreen-view {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+        }
+
+        .media-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .view-media {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+
+        video.view-media {
+            width: 100%;
+            height: 100%;
+        }
+
+        .overlay-top {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 1rem;
+            padding-top: max(1rem, env(safe-area-inset-top));
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, transparent 100%);
+            z-index: 10;
+        }
+
+        .sender-info {
+            color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 1rem;
+            font-weight: 600;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+        }
+
+        .timer-badge {
+            background: rgba(255, 71, 87, 0.9);
+            color: #fff;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 1.1rem;
+            font-weight: 700;
+            min-width: 50px;
+            text-align: center;
+        }
+
+        .timer-badge.urgent {
+            animation: pulse 0.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
+        .overlay-bottom {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 1.5rem;
+            padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+            background: linear-gradient(to top, rgba(0,0,0,0.7) 0%, transparent 100%);
+            text-align: center;
+            z-index: 10;
+        }
+
+        .tap-hint {
+            color: rgba(255,255,255,0.8);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 0.9rem;
+        }
+
+        .close-btn {
+            position: fixed;
+            top: max(1rem, env(safe-area-inset-top));
+            right: 1rem;
+            background: rgba(0,0,0,0.5);
+            border: none;
+            color: #fff;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            font-size: 1.5rem;
+            cursor: pointer;
+            z-index: 20;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="fullscreen-view" id="fullscreen-view">
+        <div class="media-container">
+            {% if photo.is_video %}
+            <video src="{{ photo.data }}" class="view-media" autoplay playsinline></video>
+            {% else %}
+            <img src="{{ photo.data }}" alt="Photo" class="view-media">
+            {% endif %}
+        </div>
+
+        <div class="overlay-top">
+            <span class="sender-info">{{ photo.sender }}</span>
+            <div class="timer-badge" id="timer-badge">{{ timeout }}</div>
+        </div>
+
+        <button class="close-btn" id="close-btn">&times;</button>
+
+        <div class="overlay-bottom">
+            <p class="tap-hint">Tap anywhere to close</p>
         </div>
     </div>
 
-    <div class="photo-display">
-        {% if photo.is_video %}
-        <video src="{{ photo.data }}" class="view-photo" autoplay controls></video>
-        {% else %}
-        <img src="{{ photo.data }}" alt="Photo from {{ photo.sender }}" class="view-photo">
-        {% endif %}
-    </div>
+    <script>
+        const timeout = {{ timeout }};
+        const photoId = "{{ photo_id }}";
+        let remaining = timeout;
 
-    <div class="view-footer">
-        <p class="disappear-warning">This {{ 'video' if photo.is_video else 'photo' }} will disappear when the timer ends</p>
-    </div>
-</div>
-{% endblock %}
+        const timerBadge = document.getElementById('timer-badge');
+        const fullscreenView = document.getElementById('fullscreen-view');
+
+        function deleteAndClose() {
+            fetch(`/api/delete/${photoId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            }).then(() => {
+                window.location.href = '/inbox';
+            });
+        }
+
+        function updateCountdown() {
+            remaining--;
+            timerBadge.textContent = remaining;
+
+            if (remaining <= 5) {
+                timerBadge.classList.add('urgent');
+            }
+
+            if (remaining <= 0) {
+                deleteAndClose();
+            }
+        }
+
+        // Start countdown
+        setInterval(updateCountdown, 1000);
+
+        // Tap anywhere to close (except on video controls)
+        fullscreenView.addEventListener('click', function(e) {
+            if (e.target.tagName !== 'VIDEO') {
+                deleteAndClose();
+            }
+        });
+
+        // Close button
+        document.getElementById('close-btn').addEventListener('click', function(e) {
+            e.stopPropagation();
+            deleteAndClose();
+        });
+    </script>
+</body>
+</html>
 
 {% block scripts %}
 <script>
