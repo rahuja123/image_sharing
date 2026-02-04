@@ -304,6 +304,14 @@ body {
     max-height: 50vh;
     border-radius: 16px;
     margin-bottom: 1rem;
+    transition: transform 0.2s ease;
+}
+
+.preview-buttons {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: center;
+    margin-bottom: 1rem;
 }
 
 /* Photo Grid (Inbox) */
