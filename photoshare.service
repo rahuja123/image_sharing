@@ -1,0 +1,26 @@
+[Unit]
+Description=Photo Share - Disappearing Photo Sharing App
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/photoshare
+EnvironmentFile=-/etc/photoshare.env
+ExecStart=/opt/photoshare/venv/bin/python app.py
+Restart=always
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Environment variables (optional - can also use EnvironmentFile)
+# Environment=ENCRYPTION_KEY=your-base64-encoded-key
+# Environment=SECRET_KEY=your-flask-secret-key
+# Environment=VIEW_TIMEOUT_SECONDS=30
+# Environment=MAX_AGE_HOURS=24
+
+[Install]
+WantedBy=multi-user.target

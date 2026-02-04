@@ -1,6 +1,7 @@
 """Disappearing Photo Sharing App - Main Flask Application."""
 
 import base64
+import os
 import uuid
 from datetime import datetime, timedelta
 from functools import wraps
@@ -15,15 +16,57 @@ from flask import (
     flash,
     jsonify,
 )
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 import config
 
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
 
-# In-memory photo storage
-# Structure: {photo_id: {sender, recipient, data, timestamp, viewed_at}}
+# Rate limiter - prevent brute force attacks
+limiter = Limiter(
+    key_func=get_remote_address,
+    app=app,
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri="memory://",
+)
+
+# In-memory photo storage (encrypted)
+# Structure: {photo_id: {sender, recipient, nonce, ciphertext, media_type, timestamp, viewed_at, is_video}}
 photos = {}
+
+
+def encrypt_media(data: bytes) -> tuple[bytes, bytes]:
+    """Encrypt media data with AES-256-GCM.
+
+    Args:
+        data: Raw media bytes to encrypt
+
+    Returns:
+        Tuple of (nonce, ciphertext)
+    """
+    key = base64.b64decode(config.ENCRYPTION_KEY)
+    aesgcm = AESGCM(key)
+    nonce = os.urandom(12)  # 96-bit nonce for GCM
+    ciphertext = aesgcm.encrypt(nonce, data, None)
+    return nonce, ciphertext
+
+
+def decrypt_media(nonce: bytes, ciphertext: bytes) -> bytes:
+    """Decrypt media data with AES-256-GCM.
+
+    Args:
+        nonce: The nonce used during encryption
+        ciphertext: The encrypted data
+
+    Returns:
+        Decrypted media bytes
+    """
+    key = base64.b64decode(config.ENCRYPTION_KEY)
+    aesgcm = AESGCM(key)
+    return aesgcm.decrypt(nonce, ciphertext, None)
 
 
 def cleanup_expired_photos():
@@ -61,7 +104,7 @@ def login_required(f):
 
 def get_other_user(current_user):
     """Get the other user's username."""
-    users = list(config.USERS.keys())
+    users = config.get_usernames()
     for user in users:
         if user != current_user:
             return user
@@ -83,13 +126,14 @@ def index():
 
 
 @app.route("/login", methods=["GET", "POST"])
+@limiter.limit("5 per minute", methods=["POST"])  # Rate limit login attempts
 def login():
     """Login page."""
     if request.method == "POST":
         username = request.form.get("username", "").strip().lower()
         password = request.form.get("password", "")
 
-        if username in config.USERS and config.USERS[username] == password:
+        if config.verify_password(username, password):
             session["username"] = username
             flash(f"Welcome, {username}!", "success")
             return redirect(url_for("inbox"))
@@ -121,6 +165,7 @@ def inbox():
                 "id": photo_id,
                 "sender": photo["sender"],
                 "timestamp": photo["timestamp"],
+                "is_video": photo.get("is_video", False),
             })
 
     # Sort by newest first
@@ -146,17 +191,22 @@ def send():
             flash("No file selected.", "error")
             return redirect(url_for("send"))
 
-        # Read and encode the media
-        media_data = base64.b64encode(file.read()).decode("utf-8")
+        # Read the raw media data
+        media_bytes = file.read()
         media_type = file.content_type or "image/jpeg"
         is_video = media_type.startswith("video/")
 
-        # Create media entry
+        # Encrypt the media
+        nonce, ciphertext = encrypt_media(media_bytes)
+
+        # Create encrypted media entry
         photo_id = str(uuid.uuid4())
         photos[photo_id] = {
             "sender": username,
             "recipient": recipient,
-            "data": f"data:{media_type};base64,{media_data}",
+            "nonce": nonce,
+            "ciphertext": ciphertext,
+            "media_type": media_type,
             "timestamp": datetime.now(),
             "viewed_at": None,
             "is_video": is_video,
@@ -189,9 +239,24 @@ def view_photo(photo_id):
     if photo["viewed_at"] is None:
         photo["viewed_at"] = datetime.now()
 
+    # Decrypt the media for viewing
+    try:
+        decrypted_data = decrypt_media(photo["nonce"], photo["ciphertext"])
+        media_data_uri = f"data:{photo['media_type']};base64,{base64.b64encode(decrypted_data).decode()}"
+    except Exception as e:
+        flash("Error decrypting media.", "error")
+        return redirect(url_for("inbox"))
+
+    # Create a temporary photo object for the template
+    photo_for_template = {
+        "sender": photo["sender"],
+        "data": media_data_uri,
+        "is_video": photo.get("is_video", False),
+    }
+
     return render_template(
         "view.html",
-        photo=photo,
+        photo=photo_for_template,
         photo_id=photo_id,
         timeout=config.VIEW_TIMEOUT_SECONDS,
         username=username,
@@ -211,6 +276,13 @@ def delete_photo(photo_id):
             return jsonify({"success": True})
 
     return jsonify({"success": False, "error": "Photo not found"})
+
+
+@app.errorhandler(429)
+def ratelimit_handler(e):
+    """Handle rate limit exceeded."""
+    flash("Too many login attempts. Please try again later.", "error")
+    return render_template("login.html"), 429
 
 
 if __name__ == "__main__":
