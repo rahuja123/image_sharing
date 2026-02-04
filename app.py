@@ -6,6 +6,8 @@ import uuid
 from datetime import datetime, timedelta
 from functools import wraps
 
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from flask import (
     Flask,
     render_template,
@@ -33,9 +35,38 @@ limiter = Limiter(
     storage_uri="memory://",
 )
 
-# In-memory photo storage (encrypted)
-# Structure: {photo_id: {sender, recipient, nonce, ciphertext, media_type, timestamp, viewed_at, is_video}}
-photos = {}
+
+def get_db():
+    """Get database connection."""
+    conn = psycopg2.connect(config.DATABASE_URL, cursor_factory=RealDictCursor)
+    return conn
+
+
+def init_db():
+    """Initialize database tables."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS photos (
+            id VARCHAR(36) PRIMARY KEY,
+            sender VARCHAR(50) NOT NULL,
+            recipient VARCHAR(50) NOT NULL,
+            nonce BYTEA NOT NULL,
+            ciphertext BYTEA NOT NULL,
+            media_type VARCHAR(50) NOT NULL,
+            is_video BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            viewed_at TIMESTAMP NULL
+        )
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+# Initialize database on startup
+with app.app_context():
+    init_db()
 
 
 def encrypt_media(data: bytes) -> tuple[bytes, bytes]:
@@ -71,24 +102,26 @@ def decrypt_media(nonce: bytes, ciphertext: bytes) -> bytes:
 
 def cleanup_expired_photos():
     """Remove photos that have expired."""
-    now = datetime.now()
-    expired_ids = []
+    conn = get_db()
+    cur = conn.cursor()
 
-    for photo_id, photo in photos.items():
-        # Check if photo was viewed and view timeout has passed
-        if photo.get("viewed_at"):
-            view_expiry = photo["viewed_at"] + timedelta(seconds=config.VIEW_TIMEOUT_SECONDS)
-            if now > view_expiry:
-                expired_ids.append(photo_id)
-                continue
+    # Delete photos that were viewed and view timeout has passed
+    cur.execute("""
+        DELETE FROM photos
+        WHERE viewed_at IS NOT NULL
+        AND viewed_at < NOW() - INTERVAL '%s seconds'
+    """, (config.VIEW_TIMEOUT_SECONDS,))
 
-        # Check if photo is too old (unviewed)
-        max_age_expiry = photo["timestamp"] + timedelta(hours=config.MAX_AGE_HOURS)
-        if now > max_age_expiry:
-            expired_ids.append(photo_id)
+    # Delete photos that are too old (unviewed)
+    cur.execute("""
+        DELETE FROM photos
+        WHERE viewed_at IS NULL
+        AND created_at < NOW() - INTERVAL '%s hours'
+    """, (config.MAX_AGE_HOURS,))
 
-    for photo_id in expired_ids:
-        del photos[photo_id]
+    conn.commit()
+    cur.close()
+    conn.close()
 
 
 def login_required(f):
@@ -157,19 +190,20 @@ def inbox():
     """Show received photos."""
     username = session["username"]
 
-    # Get photos sent to current user that haven't been viewed yet
-    user_photos = []
-    for photo_id, photo in photos.items():
-        if photo["recipient"] == username and photo.get("viewed_at") is None:
-            user_photos.append({
-                "id": photo_id,
-                "sender": photo["sender"],
-                "timestamp": photo["timestamp"],
-                "is_video": photo.get("is_video", False),
-            })
+    conn = get_db()
+    cur = conn.cursor()
 
-    # Sort by newest first
-    user_photos.sort(key=lambda x: x["timestamp"], reverse=True)
+    # Get photos sent to current user that haven't been viewed yet
+    cur.execute("""
+        SELECT id, sender, created_at as timestamp, is_video
+        FROM photos
+        WHERE recipient = %s AND viewed_at IS NULL
+        ORDER BY created_at DESC
+    """, (username,))
+
+    user_photos = cur.fetchall()
+    cur.close()
+    conn.close()
 
     return render_template("inbox.html", photos=user_photos, username=username)
 
@@ -199,18 +233,17 @@ def send():
         # Encrypt the media
         nonce, ciphertext = encrypt_media(media_bytes)
 
-        # Create encrypted media entry
+        # Store in database
         photo_id = str(uuid.uuid4())
-        photos[photo_id] = {
-            "sender": username,
-            "recipient": recipient,
-            "nonce": nonce,
-            "ciphertext": ciphertext,
-            "media_type": media_type,
-            "timestamp": datetime.now(),
-            "viewed_at": None,
-            "is_video": is_video,
-        }
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO photos (id, sender, recipient, nonce, ciphertext, media_type, is_video)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (photo_id, username, recipient, nonce, ciphertext, media_type, is_video))
+        conn.commit()
+        cur.close()
+        conn.close()
 
         flash(f"{'Video' if is_video else 'Photo'} sent to {recipient}!", "success")
         return redirect(url_for("inbox"))
@@ -224,24 +257,37 @@ def view_photo(photo_id):
     """View a specific photo."""
     username = session["username"]
 
-    if photo_id not in photos:
+    conn = get_db()
+    cur = conn.cursor()
+
+    # Get the photo
+    cur.execute("SELECT * FROM photos WHERE id = %s", (photo_id,))
+    photo = cur.fetchone()
+
+    if not photo:
+        cur.close()
+        conn.close()
         flash("Photo not found or has expired.", "error")
         return redirect(url_for("inbox"))
 
-    photo = photos[photo_id]
-
     # Check if user is the recipient
     if photo["recipient"] != username:
+        cur.close()
+        conn.close()
         flash("You don't have permission to view this photo.", "error")
         return redirect(url_for("inbox"))
 
     # Mark as viewed if not already
     if photo["viewed_at"] is None:
-        photo["viewed_at"] = datetime.now()
+        cur.execute("UPDATE photos SET viewed_at = NOW() WHERE id = %s", (photo_id,))
+        conn.commit()
+
+    cur.close()
+    conn.close()
 
     # Decrypt the media for viewing
     try:
-        decrypted_data = decrypt_media(photo["nonce"], photo["ciphertext"])
+        decrypted_data = decrypt_media(bytes(photo["nonce"]), bytes(photo["ciphertext"]))
         media_data_uri = f"data:{photo['media_type']};base64,{base64.b64encode(decrypted_data).decode()}"
     except Exception as e:
         flash("Error decrypting media.", "error")
@@ -269,12 +315,19 @@ def delete_photo(photo_id):
     """Delete a photo (called when timer expires)."""
     username = session["username"]
 
-    if photo_id in photos:
-        photo = photos[photo_id]
-        if photo["recipient"] == username:
-            del photos[photo_id]
-            return jsonify({"success": True})
+    conn = get_db()
+    cur = conn.cursor()
 
+    # Delete only if user is the recipient
+    cur.execute("DELETE FROM photos WHERE id = %s AND recipient = %s", (photo_id, username))
+    deleted = cur.rowcount > 0
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    if deleted:
+        return jsonify({"success": True})
     return jsonify({"success": False, "error": "Photo not found"})
 
 

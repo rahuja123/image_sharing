@@ -3,6 +3,10 @@
 import os
 import bcrypt
 
+# Database URL (PostgreSQL)
+# In production, set via environment variable (Render provides this automatically)
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+
 # Encryption key for AES-256-GCM (32 bytes, base64 encoded)
 # In production, set via environment variable
 ENCRYPTION_KEY = os.environ.get(

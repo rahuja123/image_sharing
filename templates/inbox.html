@@ -11,11 +11,11 @@
 {% if photos %}
 <div class="photo-grid">
     {% for photo in photos %}
-    <a href="{{ url_for('view_photo', photo_id=photo.id) }}" class="photo-card">
-        <div class="photo-icon">?</div>
+    <a href="{{ url_for('view_photo', photo_id=photo['id']) }}" class="photo-card">
+        <div class="photo-icon">{{ '🎬' if photo['is_video'] else '📷' }}</div>
         <div class="photo-info">
-            <span class="photo-sender">From: {{ photo.sender }}</span>
-            <span class="photo-time">{{ photo.timestamp.strftime('%b %d, %I:%M %p') }}</span>
+            <span class="photo-sender">From: {{ photo['sender'] }}</span>
+            <span class="photo-time">{{ photo['timestamp'].strftime('%b %d, %I:%M %p') }}</span>
         </div>
         <div class="photo-badge">Tap to view</div>
     </a>
