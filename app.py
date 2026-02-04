@@ -101,22 +101,14 @@ def decrypt_media(nonce: bytes, ciphertext: bytes) -> bytes:
 
 
 def cleanup_expired_photos():
-    """Remove photos that have expired."""
+    """Remove photos older than 24 hours."""
     conn = get_db()
     cur = conn.cursor()
 
-    # Delete photos that were viewed and view timeout has passed
+    # Delete photos older than MAX_AGE_HOURS (24 hours)
     cur.execute("""
         DELETE FROM photos
-        WHERE viewed_at IS NOT NULL
-        AND viewed_at < NOW() - INTERVAL '%s seconds'
-    """, (config.VIEW_TIMEOUT_SECONDS,))
-
-    # Delete photos that are too old (unviewed)
-    cur.execute("""
-        DELETE FROM photos
-        WHERE viewed_at IS NULL
-        AND created_at < NOW() - INTERVAL '%s hours'
+        WHERE created_at < NOW() - INTERVAL '%s hours'
     """, (config.MAX_AGE_HOURS,))
 
     conn.commit()
@@ -193,13 +185,14 @@ def inbox():
     conn = get_db()
     cur = conn.cursor()
 
-    # Get photos sent to current user that haven't been viewed yet
+    # Get all photos sent to current user (expire after 24 hours handled by cleanup)
     cur.execute("""
-        SELECT id, sender, created_at as timestamp, is_video
+        SELECT id, sender, created_at as timestamp, is_video, viewed_at,
+               created_at + INTERVAL '%s hours' as expires_at
         FROM photos
-        WHERE recipient = %s AND viewed_at IS NULL
+        WHERE recipient = %s
         ORDER BY created_at DESC
-    """, (username,))
+    """, (config.MAX_AGE_HOURS, username,))
 
     user_photos = cur.fetchall()
     cur.close()
@@ -260,8 +253,11 @@ def view_photo(photo_id):
     conn = get_db()
     cur = conn.cursor()
 
-    # Get the photo
-    cur.execute("SELECT * FROM photos WHERE id = %s", (photo_id,))
+    # Get the photo with expiry time
+    cur.execute("""
+        SELECT *, created_at + INTERVAL '%s hours' as expires_at
+        FROM photos WHERE id = %s
+    """, (config.MAX_AGE_HOURS, photo_id,))
     photo = cur.fetchone()
 
     if not photo:
@@ -277,7 +273,7 @@ def view_photo(photo_id):
         flash("You don't have permission to view this photo.", "error")
         return redirect(url_for("inbox"))
 
-    # Mark as viewed if not already
+    # Mark as viewed if not already (for visual indicator only)
     if photo["viewed_at"] is None:
         cur.execute("UPDATE photos SET viewed_at = NOW() WHERE id = %s", (photo_id,))
         conn.commit()
@@ -293,18 +289,29 @@ def view_photo(photo_id):
         flash("Error decrypting media.", "error")
         return redirect(url_for("inbox"))
 
+    # Calculate time remaining
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    expires_at = photo["expires_at"]
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    time_remaining = expires_at - now
+    hours_remaining = max(0, int(time_remaining.total_seconds() // 3600))
+    minutes_remaining = max(0, int((time_remaining.total_seconds() % 3600) // 60))
+
     # Create a temporary photo object for the template
     photo_for_template = {
         "sender": photo["sender"],
         "data": media_data_uri,
         "is_video": photo.get("is_video", False),
+        "hours_remaining": hours_remaining,
+        "minutes_remaining": minutes_remaining,
     }
 
     return render_template(
         "view.html",
         photo=photo_for_template,
         photo_id=photo_id,
-        timeout=config.VIEW_TIMEOUT_SECONDS,
         username=username,
     )
 

@@ -5,19 +5,21 @@
 {% block content %}
 <div class="page-header">
     <h1>Your Inbox</h1>
-    <p>Photos will disappear {{ config.VIEW_TIMEOUT_SECONDS if config else 30 }} seconds after viewing</p>
+    <p>Photos auto-delete after 24 hours</p>
 </div>
 
 {% if photos %}
 <div class="photo-grid">
     {% for photo in photos %}
-    <a href="{{ url_for('view_photo', photo_id=photo['id']) }}" class="photo-card">
+    <a href="{{ url_for('view_photo', photo_id=photo['id']) }}" class="photo-card {% if photo['viewed_at'] %}viewed{% endif %}">
         <div class="photo-icon">{{ '🎬' if photo['is_video'] else '📷' }}</div>
         <div class="photo-info">
             <span class="photo-sender">From: {{ photo['sender'] }}</span>
             <span class="photo-time">{{ photo['timestamp'].strftime('%b %d, %I:%M %p') }}</span>
         </div>
-        <div class="photo-badge">Tap to view</div>
+        <div class="photo-badge {% if not photo['viewed_at'] %}new{% endif %}">
+            {{ 'Opened' if photo['viewed_at'] else 'New' }}
+        </div>
     </a>
     {% endfor %}
 </div>

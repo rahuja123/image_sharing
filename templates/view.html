@@ -68,25 +68,36 @@
             text-shadow: 0 1px 3px rgba(0,0,0,0.5);
         }
 
-        .timer-badge {
-            background: rgba(255, 71, 87, 0.9);
+        .expiry-badge {
+            background: rgba(108, 92, 231, 0.9);
             color: #fff;
-            padding: 0.5rem 1rem;
+            padding: 0.5rem 0.85rem;
             border-radius: 20px;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            font-size: 1.1rem;
-            font-weight: 700;
-            min-width: 50px;
-            text-align: center;
+            font-size: 0.85rem;
+            font-weight: 600;
         }
 
-        .timer-badge.urgent {
-            animation: pulse 0.5s infinite;
+        .close-btn {
+            position: fixed;
+            top: max(1rem, env(safe-area-inset-top));
+            right: 1rem;
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: #fff;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            font-size: 1.5rem;
+            cursor: pointer;
+            z-index: 20;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
-        @keyframes pulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.1); }
+        .close-btn:active {
+            background: rgba(255,255,255,0.3);
         }
 
         .overlay-bottom {
@@ -106,31 +117,13 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             font-size: 0.9rem;
         }
-
-        .close-btn {
-            position: fixed;
-            top: max(1rem, env(safe-area-inset-top));
-            right: 1rem;
-            background: rgba(0,0,0,0.5);
-            border: none;
-            color: #fff;
-            width: 44px;
-            height: 44px;
-            border-radius: 50%;
-            font-size: 1.5rem;
-            cursor: pointer;
-            z-index: 20;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
     </style>
 </head>
 <body>
     <div class="fullscreen-view" id="fullscreen-view">
         <div class="media-container">
             {% if photo.is_video %}
-            <video src="{{ photo.data }}" class="view-media" autoplay playsinline></video>
+            <video src="{{ photo.data }}" class="view-media" autoplay playsinline controls></video>
             {% else %}
             <img src="{{ photo.data }}" alt="Photo" class="view-media">
             {% endif %}
@@ -138,113 +131,29 @@
 
         <div class="overlay-top">
             <span class="sender-info">{{ photo.sender }}</span>
-            <div class="timer-badge" id="timer-badge">{{ timeout }}</div>
+            <div class="expiry-badge">
+                {% if photo.hours_remaining > 0 %}
+                    {{ photo.hours_remaining }}h {{ photo.minutes_remaining }}m left
+                {% else %}
+                    {{ photo.minutes_remaining }}m left
+                {% endif %}
+            </div>
         </div>
 
-        <button class="close-btn" id="close-btn">&times;</button>
+        <a href="/inbox" class="close-btn">&times;</a>
 
         <div class="overlay-bottom">
-            <p class="tap-hint">Tap anywhere to close</p>
+            <p class="tap-hint">Tap X to go back</p>
         </div>
     </div>
 
     <script>
-        const timeout = {{ timeout }};
-        const photoId = "{{ photo_id }}";
-        let remaining = timeout;
-
-        const timerBadge = document.getElementById('timer-badge');
-        const fullscreenView = document.getElementById('fullscreen-view');
-
-        function deleteAndClose() {
-            fetch(`/api/delete/${photoId}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            }).then(() => {
-                window.location.href = '/inbox';
-            });
-        }
-
-        function updateCountdown() {
-            remaining--;
-            timerBadge.textContent = remaining;
-
-            if (remaining <= 5) {
-                timerBadge.classList.add('urgent');
-            }
-
-            if (remaining <= 0) {
-                deleteAndClose();
-            }
-        }
-
-        // Start countdown
-        setInterval(updateCountdown, 1000);
-
-        // Tap anywhere to close (except on video controls)
-        fullscreenView.addEventListener('click', function(e) {
+        // Tap anywhere (except video) to go back
+        document.getElementById('fullscreen-view').addEventListener('click', function(e) {
             if (e.target.tagName !== 'VIDEO') {
-                deleteAndClose();
+                window.location.href = '/inbox';
             }
-        });
-
-        // Close button
-        document.getElementById('close-btn').addEventListener('click', function(e) {
-            e.stopPropagation();
-            deleteAndClose();
         });
     </script>
 </body>
 </html>
-
-{% block scripts %}
-<script>
-    const timeout = {{ timeout }};
-    const photoId = "{{ photo_id }}";
-    let remaining = timeout;
-
-    const countdownText = document.getElementById('countdown-text');
-    const countdownCircle = document.getElementById('countdown-circle');
-
-    function updateCountdown() {
-        remaining--;
-        countdownText.textContent = remaining;
-
-        // Update circle progress
-        const progress = (remaining / timeout) * 100;
-        countdownCircle.style.strokeDasharray = `${progress}, 100`;
-
-        if (remaining <= 5) {
-            countdownCircle.style.stroke = '#ff4757';
-            document.querySelector('.countdown-container').classList.add('urgent');
-        }
-
-        if (remaining <= 0) {
-            // Delete the photo and redirect
-            fetch(`/api/delete/${photoId}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            }).then(() => {
-                window.location.href = '/inbox';
-            });
-        }
-    }
-
-    // Start countdown
-    setInterval(updateCountdown, 1000);
-
-    // Close button - delete photo and go back
-    document.getElementById('close-btn').addEventListener('click', function() {
-        fetch(`/api/delete/${photoId}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        }).then(() => {
-            window.location.href = '/inbox';
-        });
-    });
-</script>
-{% endblock %}
