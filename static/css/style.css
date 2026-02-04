@@ -387,6 +387,26 @@ video.view-photo {
     font-weight: 600;
 }
 
+.close-btn {
+    background: rgba(255, 71, 87, 0.2);
+    border: 1px solid var(--danger);
+    color: var(--danger);
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    font-size: 1.5rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.close-btn:hover {
+    background: var(--danger);
+    color: var(--white);
+}
+
 /* Countdown Timer */
 .countdown-container {
     display: flex;

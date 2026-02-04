@@ -6,6 +6,7 @@
 <div class="view-container">
     <div class="view-header">
         <span class="view-sender">From: {{ photo.sender }}</span>
+        <button class="close-btn" id="close-btn" title="Close">&times;</button>
         <div class="countdown-container">
             <div class="countdown-ring">
                 <svg viewBox="0 0 36 36">
@@ -82,5 +83,17 @@
 
     // Start countdown
     setInterval(updateCountdown, 1000);
+
+    // Close button - delete photo and go back
+    document.getElementById('close-btn').addEventListener('click', function() {
+        fetch(`/api/delete/${photoId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        }).then(() => {
+            window.location.href = '/inbox';
+        });
+    });
 </script>
 {% endblock %}
